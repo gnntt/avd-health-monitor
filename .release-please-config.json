@@ -3,11 +3,7 @@
     ".": {
       "release-type": "node",
       "package-name": "avd-health-monitor",
-      "changelog-path": "CHANGELOG.md",
-      "extra-files": [
-        "src-tauri/Cargo.toml",
-        "src-tauri/tauri.conf.json"
-      ]
+      "changelog-path": "CHANGELOG.md"
     }
   },
   "versioning": "default",

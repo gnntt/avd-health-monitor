@@ -5,20 +5,18 @@ export interface Endpoint {
   region?: string;
   enabled: boolean;
   muted?: boolean; // If true, endpoint is monitored but alerts are suppressed
-  port?: number; // Default: 443 for TCP
-  protocol?: 'tcp' | 'http' | 'https'; // Default: 'tcp'
-  category?: string; // For grouping endpoints (e.g., 'Core AVD', 'Monitoring', 'Certificates')
+  port?: number; // Default: 443 for HTTPS, 80 for HTTP
+  protocol?: EndpointProtocol; // Default: 'https'
+  category?: string; // For grouping endpoints (e.g., 'Authentication', 'AVD Services', 'Certificates')
   required?: boolean; // Whether this endpoint is required or optional
   purpose?: string; // Description of what this endpoint is for
   latencyCritical?: boolean; // If true, show latency in ms; if false, just show reachable/unreachable
-  wildcardPattern?: string; // If set, this is a wildcard endpoint (e.g., "*.wvd.microsoft.com")
-  knownSubdomains?: string[]; // Known subdomains to test for wildcard endpoints
 }
 
-// Application mode - determines which endpoints are loaded
-export type AppMode = 'sessionhost' | 'enduser';
+// The browser can only probe endpoints over HTTP(S)
+export type EndpointProtocol = 'http' | 'https';
 
-// Mode information from the loaded endpoint file
+// Description of the built-in endpoint list
 export interface ModeInfo {
   name: string;
   description?: string;
@@ -50,47 +48,42 @@ export interface LatencyThresholds {
 }
 
 export interface AppConfig {
-  mode: AppMode; // Which endpoint set to use
   testInterval: number; // seconds
-  retentionDays: number;
   thresholds: LatencyThresholds;
   notificationsEnabled: boolean;
-  autoStart: boolean;
   theme: 'light' | 'dark' | 'nord' | 'cyberpunk' | 'system';
   alertThreshold: number; // Number of consecutive high latency checks before showing notification
   alertCooldown: number; // Minutes between repeated alerts (default: 5)
   graphTimeRange: number; // Hours of history to show in graph (default: 1)
-  fslogixEnabled: boolean; // Whether to monitor FSLogix storage paths
-  fslogixTestInterval: number; // Seconds between FSLogix connectivity tests (default: 60)
-  fslogixAlertThreshold: number; // Consecutive failures before FSLogix alert (default: 3)
-  fslogixAlertCooldown: number; // Minutes between repeated FSLogix alerts (default: 5)
 }
 
-// Custom endpoint added by user (stored in settings.json)
+// Custom endpoint added by user (stored in browser localStorage)
 export interface CustomEndpoint {
   id: string;
   name: string;
   url: string;
   port?: number;
-  protocol?: 'tcp' | 'http' | 'https';
+  protocol?: EndpointProtocol;
   category?: string;
   enabled: boolean;
   latencyCritical?: boolean; // If true, show latency in ms; if false, just show reachable/unreachable
 }
 
-// JSON settings file structure (stored on disk)
+// User changes to a built-in endpoint (stored in browser localStorage)
+export interface EndpointOverride {
+  enabled?: boolean;
+  muted?: boolean;
+  name?: string;
+  url?: string;
+  port?: number;
+}
+
+// Exported settings file structure (Settings > Export / Import)
 export interface SettingsFile {
   version: number;
   config: AppConfig;
   customEndpoints?: CustomEndpoint[];
-}
-
-// Response from read_settings_with_endpoints (includes resolved endpoints)
-export interface SettingsResponse {
-  version: number;
-  config: AppConfig;
-  endpoints: Endpoint[];
-  modeInfo: ModeInfo;
+  endpointOverrides?: Record<string, EndpointOverride>;
 }
 
 export interface LatencyHistory {
@@ -111,25 +104,4 @@ export interface EndpointStatus {
   history: LatencyHistory['data'];
   error: EndpointError | null; // Current error state if test failed
   isLoading: boolean; // Whether a test is currently running
-}
-
-// FSLogix Storage Path from Windows Registry
-export interface FSLogixPath {
-  id: string;
-  type: 'profile' | 'odfc';
-  path: string;
-  hostname: string;
-  port: number;
-  muted?: boolean; // If true, alerts are suppressed for this path
-}
-
-// FSLogix connectivity status
-export interface FSLogixStatus {
-  path: FSLogixPath;
-  reachable: boolean;
-  latency: number | null;
-  error: string | null;
-  isLoading: boolean;
-  lastUpdated: number | null;
-  consecutiveFailures: number; // Track consecutive failures for alerting
 }

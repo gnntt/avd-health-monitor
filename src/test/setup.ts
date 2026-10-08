@@ -34,13 +34,3 @@ afterEach(() => {
   // Clear localStorage between tests
   localStorageMock.clear();
 });
-
-// Mock Tauri API
-(globalThis as any).window = (globalThis as any).window || {};
-(globalThis as any).window.__TAURI__ = {
-  invoke: async () => Promise.resolve(),
-  event: {
-    listen: () => Promise.resolve(() => {}),
-    emit: () => Promise.resolve(),
-  },
-};

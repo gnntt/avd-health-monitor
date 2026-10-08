@@ -4,125 +4,82 @@ This file provides guidance to Claude Code (claude.ai/claude-code) when working 
 
 ## Project Overview
 
-AVD Health Monitor is a Windows system tray application for real-time Azure Virtual Desktop (AVD) endpoint health monitoring. Built with Tauri 2 (Rust backend) and React/TypeScript frontend.
+AVD Health Monitor is a browser-only web page that monitors, in real time, whether an Azure Virtual Desktop (AVD) client device can reach the endpoints it needs. The build is a single self-contained `index.html` that users open by double-clicking (`file://`) or from any web server. There is no backend.
 
 ## Tech Stack
 
-- **Frontend**: React 18, TypeScript 5, TailwindCSS 3, Recharts (graphs), Zustand (state)
-- **Backend**: Tauri 2, Rust 1.75+, Tokio (async), reqwest (HTTP)
-- **Build**: pnpm, Vite, Cargo
+- **Frontend**: React 19, TypeScript 5, TailwindCSS 3, Recharts (graphs), Zustand (state)
+- **Build**: pnpm, Vite, vite-plugin-singlefile (inlines all JS/CSS into one HTML file)
+- **Tests**: Vitest + happy-dom
 
 ## Project Structure
 
 ```
-src/                          # React/TypeScript frontend
+src/
 ├── components/
-│   ├── Dashboard.tsx         # Main monitoring view
-│   ├── EndpointCard.tsx      # Individual endpoint display
-│   ├── EndpointTile.tsx      # Compact endpoint tile
-│   ├── FSLogixSection.tsx    # FSLogix storage monitoring
-│   ├── SettingsPanel.tsx     # Configuration UI
-│   └── ErrorBoundary.tsx     # Error handling wrapper
+│   ├── Dashboard.tsx          # Main monitoring view
+│   ├── EndpointCard.tsx       # Individual endpoint display
+│   ├── EndpointTile.tsx       # Compact endpoint tile
+│   ├── SettingsPanel.tsx      # Configuration UI, export/import/reset
+│   └── ErrorBoundary.tsx      # Error handling wrapper
+├── data/
+│   ├── endpoints.json         # Built-in AVD end-user endpoints
+│   └── builtInEndpoints.ts    # Flattens endpoints.json, applies overrides
 ├── hooks/
-│   ├── useTrayIcon.ts        # Tray icon + notifications
-│   └── useSettingsSync.ts    # Settings file synchronization
+│   └── useStatusIndicator.ts  # Favicon color, tab title, browser notifications
 ├── store/
-│   └── useAppStore.ts        # Global Zustand state
+│   └── useAppStore.ts         # Global Zustand state, persisted to localStorage
 ├── services/
-│   ├── latencyService.ts     # Latency testing service
-│   └── fslogixService.ts     # FSLogix service
-└── types.ts                  # TypeScript definitions
-
-src-tauri/                    # Rust backend
-├── src/
-│   ├── lib.rs                # Main Tauri app + commands
-│   ├── main.rs               # Entry point
-│   ├── latency.rs            # TCP/HTTP latency testing
-│   ├── settings.rs           # Settings + endpoint file management
-│   ├── tray_icon.rs          # Dynamic icon generation
-│   ├── logger.rs             # File logging
-│   ├── autostart.rs          # Windows Registry auto-start
-│   └── fslogix.rs            # FSLogix registry detection
-├── resources/
-│   ├── settings.json         # Default settings
-│   ├── sessionhost-endpoints.json
-│   └── enduser-endpoints.json
-└── tauri.conf.json           # Tauri configuration
+│   └── latencyService.ts      # Browser latency probe (fetch HEAD, no-cors)
+└── types.ts                   # TypeScript definitions
 ```
 
 ## Common Commands
 
-```powershell
-# Install dependencies
-pnpm install
-
-# Run in development mode (hot reload)
-pnpm tauri dev
-
-# Build for production (outputs MSI + EXE)
-pnpm tauri build
-
-# Frontend tests
-pnpm test:run
-
-# Rust tests
-cd src-tauri && cargo test
-
-# Type checking
-pnpm exec tsc --noEmit
+```bash
+pnpm install            # Install dependencies
+pnpm dev                # Dev server with hot reload
+pnpm build              # Type check + build dist/index.html (single file)
+pnpm test:run           # Tests
+pnpm exec tsc --noEmit  # Type checking
 ```
 
 ## Key Concepts
 
-### Application Modes
-- **Session Host Mode**: For AVD session host VMs - monitors agent, RD Gateway, Windows activation endpoints
-- **End User Device Mode**: For client devices - monitors Remote Desktop client, Azure AD endpoints
-
 ### Latency Testing
-- Rust backend performs TCP/HTTP/HTTPS latency tests via `src-tauri/src/latency.rs`
-- Frontend invokes via Tauri commands defined in `src-tauri/src/lib.rs`
-- Results stored in Zustand store (`src/store/useAppStore.ts`)
+- `src/services/latencyService.ts` sends `HEAD` requests with `mode: 'no-cors'`, `cache: 'no-store'` and times them with `performance.now()`
+- Two requests per test; the faster one (warm connection) is reported. 5 second timeout.
+- Responses are opaque: a resolved fetch means reachable, a rejected one means unreachable. Status codes and failure reasons are not visible.
+- Only HTTP(S) can be tested. `redirect: 'manual'` is not allowed with `no-cors`.
 
-### FSLogix Monitoring (Session Host only)
-- Reads FSLogix paths from Windows Registry (`HKLM\SOFTWARE\FSLogix\Profiles`)
-- Tests SMB connectivity to storage endpoints on port 445
-- Implemented in `src-tauri/src/fslogix.rs`
-
-### System Tray
-- Dynamic color-coded icon based on worst endpoint status
-- Icon generation in `src-tauri/src/tray_icon.rs`
-- Tray menu actions: Show Dashboard, Pause/Resume, Test Now, Settings, Exit
+### Must work from file://
+- Keep the build a single file (no external scripts, no `public/` assets): browsers block module scripts loaded from `file://`
+- Don't add features that need a server or a backend
 
 ### Settings Storage
-- Settings: `%APPDATA%\AVDHealthMonitor\settings.json`
-- Logs: `%APPDATA%\AVDHealthMonitor\logs\`
-- Managed by `src-tauri/src/settings.rs`
+- Zustand `persist` middleware stores `config`, `customEndpoints`, `endpointOverrides` and 24h of history in `localStorage` (`avd-health-monitor-state`)
+- Built-in endpoints come from `endpoints.json`; user changes to them (enabled, muted, name, url, port) are stored as `endpointOverrides`
+- Export/Import in Settings writes/reads a `SettingsFile` JSON; imported data is validated by `sanitizeConfig` and friends in the store
 
-## Tauri Commands (Rust → Frontend)
-
-Key commands exposed from Rust to frontend (defined in `src-tauri/src/lib.rs`):
-- `test_latency` - Test endpoint latency
-- `get_settings` / `save_settings` - Settings management
-- `get_endpoints` / `save_endpoints` - Endpoint management
-- `set_tray_icon` - Update tray icon color
-- `get_fslogix_paths` - Read FSLogix registry paths
-- `test_fslogix_connectivity` - Test FSLogix storage connectivity
+### Status Indicator
+- `useStatusIndicator` colors the favicon (SVG data URL) and sets the tab title from the average latency
+- Browser notifications after `alertThreshold` consecutive slow checks, at most every `alertCooldown` minutes; needs Notification permission
 
 ## State Management
 
 Zustand store in `src/store/useAppStore.ts` manages:
-- `endpoints` - List of monitored endpoints with latency history
-- `settings` - Application settings (thresholds, intervals, theme)
+- `endpoints` - Built-in (with overrides) plus custom endpoints
+- `endpointStatuses` - Latest result and history per endpoint
+- `config` - Thresholds, interval, theme, notification settings
 - `isPaused` - Monitoring pause state
-- `fslogixPaths` - FSLogix storage paths and status
 
 ## Testing
 
-- Frontend tests use Vitest (`src/lib/utils.test.ts`, `src/store/useAppStore.test.ts`)
+- Tests: `src/lib/utils.test.ts`, `src/store/useAppStore.test.ts`, `src/services/latencyService.test.ts`
 - Test setup in `src/test/setup.ts`
 - Run with `pnpm test:run`
 
 ## CI/CD
 
-- `.github/workflows/ci.yml` - Build and test on push/PR
+- `.github/workflows/ci.yml` - Tests and builds on push/PR; on release, uploads `avd-health-monitor.html`
 - Release Please for automated versioning (`.release-please-config.json`)

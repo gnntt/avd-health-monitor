@@ -1,56 +1,19 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { invoke } from '@tauri-apps/api/core';
-import type { Endpoint, AppConfig, EndpointStatus, LatencyThresholds, EndpointError, ModeInfo, CustomEndpoint, FSLogixPath, FSLogixStatus } from '../types';
+import type {
+  Endpoint,
+  AppConfig,
+  EndpointStatus,
+  LatencyThresholds,
+  EndpointError,
+  ModeInfo,
+  CustomEndpoint,
+  EndpointOverride,
+  SettingsFile,
+} from '../types';
 import { getLatencyStatus } from '../lib/utils';
 import { parseBackendError, getUserFriendlyErrorMessage } from '../errors';
-
-// Helper to save settings (config + custom endpoints) to JSON file
-const saveSettingsToFile = async (config: AppConfig, customEndpoints: CustomEndpoint[]): Promise<void> => {
-  try {
-    const settings = {
-      version: 1,
-      config,
-      customEndpoints,
-    };
-    await invoke('write_settings_file', { settings });
-  } catch (error) {
-    console.error('[useAppStore] Failed to save settings to JSON:', error);
-  }
-};
-
-// Helper to update endpoint state in the endpoint JSON file
-const updateEndpointInFile = async (
-  mode: string,
-  endpointId: string,
-  updates: {
-    enabled?: boolean;
-    muted?: boolean;
-    name?: string;
-    url?: string;
-    port?: number;
-  }
-): Promise<void> => {
-  try {
-    await invoke('update_endpoint', { mode, endpointId, ...updates });
-  } catch (error) {
-    console.error('[useAppStore] Failed to update endpoint in file:', error);
-  }
-};
-
-// Minimal fallback endpoint - real endpoints come from JSON files
-const DEFAULT_ENDPOINTS: Endpoint[] = [
-  {
-    id: 'azure-login',
-    name: 'Azure AD Authentication',
-    url: 'login.microsoftonline.com',
-    region: 'global',
-    enabled: true,
-    port: 443,
-    protocol: 'tcp',
-    category: 'Core AVD',
-  },
-];
+import { MODE_INFO, buildEndpoints, customToEndpoint } from '../data/builtInEndpoints';
 
 const DEFAULT_THRESHOLDS: LatencyThresholds = {
   excellent: 30,
@@ -58,52 +21,111 @@ const DEFAULT_THRESHOLDS: LatencyThresholds = {
   warning: 150,
 };
 
-const DEFAULT_CONFIG: AppConfig = {
-  mode: 'sessionhost',
+export const DEFAULT_CONFIG: AppConfig = {
   testInterval: 10,
-  retentionDays: 30,
   thresholds: DEFAULT_THRESHOLDS,
-  notificationsEnabled: true,
-  autoStart: true,
+  notificationsEnabled: false,
   theme: 'system',
   alertThreshold: 3,
   alertCooldown: 5,
   graphTimeRange: 1,
-  fslogixEnabled: true,
-  fslogixTestInterval: 60,
-  fslogixAlertThreshold: 3,
-  fslogixAlertCooldown: 5,
 };
+
+// Version of the exported settings file format
+export const SETTINGS_FILE_VERSION = 1;
+
+const THEMES: ReadonlyArray<AppConfig['theme']> = ['light', 'dark', 'nord', 'cyberpunk', 'system'];
+
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const clamp = (value: unknown, min: number, max: number, fallback: number): number =>
+  isNumber(value) ? Math.max(min, Math.min(max, Math.round(value))) : fallback;
+
+/** Keep only known config keys with valid values (used for localStorage and imported files). */
+export function sanitizeConfig(raw: unknown): AppConfig {
+  const c = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const t = (c.thresholds && typeof c.thresholds === 'object' ? c.thresholds : {}) as Record<string, unknown>;
+
+  return {
+    testInterval: clamp(c.testInterval, 5, 300, DEFAULT_CONFIG.testInterval),
+    thresholds: {
+      excellent: isNumber(t.excellent) ? t.excellent : DEFAULT_THRESHOLDS.excellent,
+      good: isNumber(t.good) ? t.good : DEFAULT_THRESHOLDS.good,
+      warning: isNumber(t.warning) ? t.warning : DEFAULT_THRESHOLDS.warning,
+    },
+    notificationsEnabled:
+      typeof c.notificationsEnabled === 'boolean' ? c.notificationsEnabled : DEFAULT_CONFIG.notificationsEnabled,
+    theme: THEMES.includes(c.theme as AppConfig['theme']) ? (c.theme as AppConfig['theme']) : DEFAULT_CONFIG.theme,
+    alertThreshold: clamp(c.alertThreshold, 1, 10, DEFAULT_CONFIG.alertThreshold),
+    alertCooldown: clamp(c.alertCooldown, 1, 60, DEFAULT_CONFIG.alertCooldown),
+    graphTimeRange: clamp(c.graphTimeRange, 1, 24, DEFAULT_CONFIG.graphTimeRange),
+  };
+}
+
+function sanitizeCustomEndpoints(raw: unknown): CustomEndpoint[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((ep): ep is Record<string, unknown> =>
+      !!ep && typeof ep === 'object' && typeof ep.name === 'string' && typeof ep.url === 'string'
+    )
+    .map((ep) => {
+      // Desktop settings files used 'tcp'; the browser probes those over HTTPS
+      const protocol = ep.protocol === 'http' ? 'http' : 'https';
+      return {
+        id: typeof ep.id === 'string' && ep.id.startsWith('custom-') ? ep.id : `custom-${crypto.randomUUID()}`,
+        name: ep.name as string,
+        url: ep.url as string,
+        port: isNumber(ep.port) ? ep.port : protocol === 'http' ? 80 : 443,
+        protocol,
+        category: typeof ep.category === 'string' ? ep.category : 'Custom',
+        enabled: ep.enabled !== false,
+        latencyCritical: typeof ep.latencyCritical === 'boolean' ? ep.latencyCritical : undefined,
+      };
+    });
+}
+
+function sanitizeOverrides(raw: unknown): Record<string, EndpointOverride> {
+  if (!raw || typeof raw !== 'object') return {};
+  const result: Record<string, EndpointOverride> = {};
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const v = value as Record<string, unknown>;
+    const override: EndpointOverride = {};
+    if (typeof v.enabled === 'boolean') override.enabled = v.enabled;
+    if (typeof v.muted === 'boolean') override.muted = v.muted;
+    if (typeof v.name === 'string') override.name = v.name;
+    if (typeof v.url === 'string') override.url = v.url;
+    if (isNumber(v.port)) override.port = v.port;
+    result[id] = override;
+  }
+  return result;
+}
 
 interface AppState {
   // Configuration
   config: AppConfig;
   endpoints: Endpoint[];
   customEndpoints: CustomEndpoint[];
-  modeInfo: ModeInfo | null;
+  endpointOverrides: Record<string, EndpointOverride>;
+  modeInfo: ModeInfo;
 
   // Status
   endpointStatuses: Map<string, EndpointStatus>;
   isMonitoring: boolean;
   isPaused: boolean;
 
-  // FSLogix state
-  fslogixPaths: FSLogixPath[];
-  fslogixStatuses: Map<string, FSLogixStatus>;
-
   // UI State
   currentView: 'dashboard' | 'settings';
 
-  // Flag to trigger immediate test (used after mode switch)
+  // Flag to trigger immediate test (used after importing settings)
   pendingTestTrigger: boolean;
 
   // Actions
   setConfig: (config: Partial<AppConfig>) => void;
-  setEndpoints: (endpoints: Endpoint[]) => void;
-  setModeInfo: (modeInfo: ModeInfo) => void;
   updateEndpointEnabled: (id: string, enabled: boolean) => void;
   updateEndpointMuted: (id: string, muted: boolean) => void;
-  updateModeEndpoint: (id: string, updates: { name?: string; url?: string; port?: number }) => void;
+  updateBuiltInEndpoint: (id: string, updates: { name?: string; url?: string; port?: number }) => void;
   triggerTestNow: () => void;
   clearTestTrigger: () => void;
 
@@ -111,7 +133,11 @@ interface AppState {
   addCustomEndpoint: (endpoint: Omit<CustomEndpoint, 'id'>) => void;
   updateCustomEndpoint: (id: string, updates: Partial<CustomEndpoint>) => void;
   removeCustomEndpoint: (id: string) => void;
-  setCustomEndpoints: (endpoints: CustomEndpoint[]) => void;
+
+  // Settings file export / import
+  exportSettings: () => SettingsFile;
+  importSettings: (settings: unknown) => void;
+  resetSettings: () => void;
 
   updateLatency: (endpointId: string, latency: number, success: boolean, error?: unknown) => void;
   setEndpointLoading: (endpointId: string, isLoading: boolean) => void;
@@ -123,16 +149,6 @@ interface AppState {
   setCurrentView: (view: 'dashboard' | 'settings') => void;
 
   getEndpointStatus: (endpointId: string) => EndpointStatus | undefined;
-
-  // Restore history for endpoints (used when loading endpoints from settings.json)
-  restoreHistoryForEndpoints: (endpoints: Endpoint[]) => void;
-
-  // FSLogix actions
-  setFSLogixPaths: (paths: FSLogixPath[]) => void;
-  updateFSLogixStatus: (pathId: string, reachable: boolean, latency: number | null, error: string | null) => void;
-  setFSLogixLoading: (pathId: string, isLoading: boolean) => void;
-  setAllFSLogixLoading: (isLoading: boolean) => void;
-  updateFSLogixPathMuted: (pathId: string, muted: boolean) => void;
 }
 
 // Storage key for localStorage
@@ -153,6 +169,7 @@ interface SerializedHistory {
 interface PersistedState {
   config: AppConfig;
   customEndpoints: CustomEndpoint[];
+  endpointOverrides: Record<string, EndpointOverride>;
   historyData?: SerializedHistory;
 }
 
@@ -204,19 +221,41 @@ const deserializeHistory = (
   return statuses;
 };
 
+// Apply an endpoint change to both the endpoint list and the status map
+const patchEndpoint = (
+  state: Pick<AppState, 'endpoints' | 'endpointStatuses'>,
+  id: string,
+  updates: Partial<Endpoint>
+): Pick<AppState, 'endpoints' | 'endpointStatuses'> => {
+  const endpoints = state.endpoints.map((ep) => (ep.id === id ? { ...ep, ...updates } : ep));
+
+  // Also update the endpoint reference in endpointStatuses so the status indicator sees the change
+  const endpointStatuses = new Map(state.endpointStatuses);
+  const currentStatus = endpointStatuses.get(id);
+  if (currentStatus) {
+    endpointStatuses.set(id, {
+      ...currentStatus,
+      endpoint: { ...currentStatus.endpoint, ...updates },
+    });
+  }
+
+  return { endpoints, endpointStatuses };
+};
+
+const isCustomId = (id: string) => id.startsWith('custom-');
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
       // Initial state
       config: DEFAULT_CONFIG,
-      endpoints: DEFAULT_ENDPOINTS,
+      endpoints: buildEndpoints({}, []),
       customEndpoints: [],
-      modeInfo: null,
+      endpointOverrides: {},
+      modeInfo: MODE_INFO,
       endpointStatuses: new Map(),
       isMonitoring: false,
       isPaused: false,
-      fslogixPaths: [],
-      fslogixStatuses: new Map(),
       currentView: 'dashboard',
       pendingTestTrigger: false,
 
@@ -225,142 +264,59 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           config: { ...state.config, ...config },
         }));
-        // Auto-save to JSON
-        const state = get();
-        saveSettingsToFile(state.config, state.customEndpoints);
-      },
-
-      setEndpoints: (endpoints) => {
-        // Just set the endpoints - history restoration is handled by restoreHistoryForEndpoints
-        // The endpointStatuses map is preserved to maintain history for endpoints that still exist
-        set({ endpoints });
-      },
-
-      setModeInfo: (modeInfo) => {
-        set({ modeInfo });
       },
 
       updateEndpointEnabled: (id, enabled) => {
-        const state = get();
-        const isCustom = state.customEndpoints.some((ep) => ep.id === id);
-
         set((state) => {
-          // Update endpoint in state
-          const endpoints = state.endpoints.map((ep) =>
-            ep.id === id ? { ...ep, enabled } : ep
-          );
+          const patched = patchEndpoint(state, id, { enabled });
 
-          // Also update the endpoint reference in endpointStatuses
-          const newStatuses = new Map(state.endpointStatuses);
-          const currentStatus = newStatuses.get(id);
-          if (currentStatus) {
-            newStatuses.set(id, {
-              ...currentStatus,
-              endpoint: { ...currentStatus.endpoint, enabled },
-            });
-          }
-
-          if (isCustom) {
+          if (isCustomId(id)) {
             const customEndpoints = state.customEndpoints.map((ep) =>
               ep.id === id ? { ...ep, enabled } : ep
             );
-            return { customEndpoints, endpoints, endpointStatuses: newStatuses };
+            return { ...patched, customEndpoints };
           }
 
-          return { endpoints, endpointStatuses: newStatuses };
+          const endpointOverrides = {
+            ...state.endpointOverrides,
+            [id]: { ...state.endpointOverrides[id], enabled },
+          };
+          return { ...patched, endpointOverrides };
         });
-
-        // Save to appropriate file
-        if (isCustom) {
-          const newState = get();
-          saveSettingsToFile(newState.config, newState.customEndpoints);
-        } else {
-          updateEndpointInFile(state.config.mode, id, { enabled });
-        }
       },
 
       updateEndpointMuted: (id, muted) => {
-        const state = get();
-
-        set((state) => {
-          // Update endpoint in state
-          const endpoints = state.endpoints.map((ep) =>
-            ep.id === id ? { ...ep, muted } : ep
-          );
-
-          // Also update the endpoint reference in endpointStatuses so tray icon hook sees the change
-          const newStatuses = new Map(state.endpointStatuses);
-          const currentStatus = newStatuses.get(id);
-          if (currentStatus) {
-            newStatuses.set(id, {
-              ...currentStatus,
-              endpoint: { ...currentStatus.endpoint, muted },
-            });
-          }
-
-          return { endpoints, endpointStatuses: newStatuses };
-        });
-
-        // Save directly to endpoint JSON file
-        updateEndpointInFile(state.config.mode, id, { muted });
+        set((state) => ({
+          ...patchEndpoint(state, id, { muted }),
+          endpointOverrides: {
+            ...state.endpointOverrides,
+            [id]: { ...state.endpointOverrides[id], muted },
+          },
+        }));
       },
 
-      updateModeEndpoint: (id, updates) => {
-        const state = get();
-
-        set((state) => {
-          // Update endpoint in state
-          const endpoints = state.endpoints.map((ep) =>
-            ep.id === id ? { ...ep, ...updates } : ep
-          );
-
-          // Also update the endpoint reference in endpointStatuses
-          const newStatuses = new Map(state.endpointStatuses);
-          const currentStatus = newStatuses.get(id);
-          if (currentStatus) {
-            newStatuses.set(id, {
-              ...currentStatus,
-              endpoint: { ...currentStatus.endpoint, ...updates },
-            });
-          }
-
-          return { endpoints, endpointStatuses: newStatuses };
-        });
-
-        // Save directly to endpoint JSON file
-        updateEndpointInFile(state.config.mode, id, updates);
+      updateBuiltInEndpoint: (id, updates) => {
+        set((state) => ({
+          ...patchEndpoint(state, id, updates),
+          endpointOverrides: {
+            ...state.endpointOverrides,
+            [id]: { ...state.endpointOverrides[id], ...updates },
+          },
+        }));
       },
 
       // Custom endpoint management
       addCustomEndpoint: (endpoint) => {
-        const id = `custom-${crypto.randomUUID()}`;
         const newEndpoint: CustomEndpoint = {
           ...endpoint,
-          id,
+          id: `custom-${crypto.randomUUID()}`,
           category: endpoint.category || 'Custom',
         };
 
-        set((state) => {
-          const customEndpoints = [...state.customEndpoints, newEndpoint];
-          // Also add to endpoints list
-          const endpointForList: Endpoint = {
-            id: newEndpoint.id,
-            name: newEndpoint.name,
-            url: newEndpoint.url,
-            port: newEndpoint.port,
-            protocol: newEndpoint.protocol,
-            category: newEndpoint.category,
-            enabled: newEndpoint.enabled,
-            required: false,
-            purpose: 'Custom endpoint',
-          };
-          const endpoints = [...state.endpoints, endpointForList];
-          return { customEndpoints, endpoints };
-        });
-
-        // Auto-save to JSON
-        const state = get();
-        saveSettingsToFile(state.config, state.customEndpoints);
+        set((state) => ({
+          customEndpoints: [...state.customEndpoints, newEndpoint],
+          endpoints: [...state.endpoints, customToEndpoint(newEndpoint)],
+        }));
       },
 
       updateCustomEndpoint: (id, updates) => {
@@ -368,28 +324,10 @@ export const useAppStore = create<AppState>()(
           const customEndpoints = state.customEndpoints.map((ep) =>
             ep.id === id ? { ...ep, ...updates } : ep
           );
-          // Also update in endpoints list
-          const endpoints = state.endpoints.map((ep) =>
-            ep.id === id
-              ? {
-                  ...ep,
-                  ...updates,
-                  // Ensure these fields are properly mapped
-                  name: updates.name ?? ep.name,
-                  url: updates.url ?? ep.url,
-                  port: updates.port ?? ep.port,
-                  protocol: updates.protocol ?? ep.protocol,
-                  category: updates.category ?? ep.category,
-                  enabled: updates.enabled ?? ep.enabled,
-                }
-              : ep
-          );
-          return { customEndpoints, endpoints };
+          const updated = customEndpoints.find((ep) => ep.id === id);
+          if (!updated) return state;
+          return { ...patchEndpoint(state, id, customToEndpoint(updated)), customEndpoints };
         });
-
-        // Auto-save to JSON
-        const state = get();
-        saveSettingsToFile(state.config, state.customEndpoints);
       },
 
       removeCustomEndpoint: (id) => {
@@ -401,14 +339,48 @@ export const useAppStore = create<AppState>()(
           newStatuses.delete(id);
           return { customEndpoints, endpoints, endpointStatuses: newStatuses };
         });
-
-        // Auto-save to JSON
-        const state = get();
-        saveSettingsToFile(state.config, state.customEndpoints);
       },
 
-      setCustomEndpoints: (customEndpoints) => {
-        set({ customEndpoints });
+      exportSettings: () => {
+        const state = get();
+        return {
+          version: SETTINGS_FILE_VERSION,
+          config: state.config,
+          customEndpoints: state.customEndpoints,
+          endpointOverrides: state.endpointOverrides,
+        };
+      },
+
+      importSettings: (settings) => {
+        if (!settings || typeof settings !== 'object' || !('config' in settings)) {
+          throw new Error('Not an AVD Health Monitor settings file');
+        }
+        const file = settings as Partial<SettingsFile>;
+        const config = sanitizeConfig(file.config);
+        const customEndpoints = sanitizeCustomEndpoints(file.customEndpoints);
+        const endpointOverrides = sanitizeOverrides(file.endpointOverrides);
+        const endpoints = buildEndpoints(endpointOverrides, customEndpoints);
+
+        set((state) => {
+          // Keep history for endpoints that still exist
+          const endpointStatuses = new Map<string, EndpointStatus>();
+          endpoints.forEach((endpoint) => {
+            const status = state.endpointStatuses.get(endpoint.id);
+            if (status) endpointStatuses.set(endpoint.id, { ...status, endpoint });
+          });
+          return { config, customEndpoints, endpointOverrides, endpoints, endpointStatuses, pendingTestTrigger: true };
+        });
+      },
+
+      resetSettings: () => {
+        set({
+          config: DEFAULT_CONFIG,
+          customEndpoints: [],
+          endpointOverrides: {},
+          endpoints: buildEndpoints({}, []),
+          endpointStatuses: new Map(),
+          pendingTestTrigger: true,
+        });
       },
 
       updateLatency: (endpointId, latency, success, error?) =>
@@ -533,153 +505,6 @@ export const useAppStore = create<AppState>()(
         const state = get();
         return state.endpointStatuses.get(endpointId);
       },
-
-      restoreHistoryForEndpoints: (endpoints) =>
-        set((state) => {
-          const storageData = localStorage.getItem(STORAGE_KEY);
-          if (!storageData) return state;
-
-          try {
-            const parsed = JSON.parse(storageData);
-            const historyData = parsed?.state?.historyData as SerializedHistory | undefined;
-            if (!historyData) return state;
-
-            const newStatuses = new Map(state.endpointStatuses);
-
-            endpoints.forEach((endpoint) => {
-              const savedHistory = historyData[endpoint.id];
-              const currentStatus = newStatuses.get(endpoint.id);
-
-              if (savedHistory && savedHistory.history.length > 0) {
-                const cleanedHistory = cleanupOldHistory(savedHistory.history);
-                if (cleanedHistory.length > 0) {
-                  newStatuses.set(endpoint.id, {
-                    endpoint,
-                    currentLatency: currentStatus?.currentLatency ?? cleanedHistory[cleanedHistory.length - 1]?.latency ?? null,
-                    status: currentStatus?.status ?? 'unknown',
-                    lastUpdated: currentStatus?.lastUpdated ?? savedHistory.lastUpdated,
-                    history: currentStatus?.history?.length ? currentStatus.history : cleanedHistory,
-                    error: currentStatus?.error ?? null,
-                    isLoading: currentStatus?.isLoading ?? false,
-                  });
-                }
-              }
-            });
-
-            return { endpointStatuses: newStatuses };
-          } catch (error) {
-            console.error('[useAppStore] Failed to restore history:', error);
-            return state;
-          }
-        }),
-
-      // FSLogix actions
-      setFSLogixPaths: (paths) => {
-        set({ fslogixPaths: paths });
-      },
-
-      updateFSLogixStatus: (pathId, reachable, latency, error) =>
-        set((state) => {
-          const path = state.fslogixPaths.find((p) => p.id === pathId);
-          if (!path) return state;
-
-          const newStatuses = new Map(state.fslogixStatuses);
-          const timestamp = Date.now();
-          const currentStatus = newStatuses.get(pathId);
-
-          // Track consecutive failures: increment on failure, reset on success
-          const consecutiveFailures = reachable
-            ? 0
-            : (currentStatus?.consecutiveFailures ?? 0) + 1;
-
-          const status: FSLogixStatus = {
-            path,
-            reachable,
-            latency,
-            error,
-            isLoading: false,
-            lastUpdated: timestamp,
-            consecutiveFailures,
-          };
-
-          newStatuses.set(pathId, status);
-          return { fslogixStatuses: newStatuses };
-        }),
-
-      setFSLogixLoading: (pathId, isLoading) =>
-        set((state) => {
-          const path = state.fslogixPaths.find((p) => p.id === pathId);
-          if (!path) return state;
-
-          const newStatuses = new Map(state.fslogixStatuses);
-          const currentStatus = newStatuses.get(pathId);
-
-          const status: FSLogixStatus = currentStatus
-            ? { ...currentStatus, isLoading }
-            : {
-                path,
-                reachable: false,
-                latency: null,
-                error: null,
-                isLoading,
-                lastUpdated: null,
-                consecutiveFailures: 0,
-              };
-
-          newStatuses.set(pathId, status);
-          return { fslogixStatuses: newStatuses };
-        }),
-
-      setAllFSLogixLoading: (isLoading) =>
-        set((state) => {
-          const newStatuses = new Map(state.fslogixStatuses);
-
-          for (const path of state.fslogixPaths) {
-            const currentStatus = newStatuses.get(path.id);
-
-            const status: FSLogixStatus = currentStatus
-              ? { ...currentStatus, isLoading }
-              : {
-                  path,
-                  reachable: false,
-                  latency: null,
-                  error: null,
-                  isLoading,
-                  lastUpdated: null,
-                  consecutiveFailures: 0,
-                };
-
-            newStatuses.set(path.id, status);
-          }
-
-          return { fslogixStatuses: newStatuses };
-        }),
-
-      updateFSLogixPathMuted: (pathId, muted) => {
-        // Update the path in state
-        set((state) => {
-          const fslogixPaths = state.fslogixPaths.map((path) =>
-            path.id === pathId ? { ...path, muted } : path
-          );
-
-          // Also update the path reference in fslogixStatuses
-          const newStatuses = new Map(state.fslogixStatuses);
-          const currentStatus = newStatuses.get(pathId);
-          if (currentStatus) {
-            newStatuses.set(pathId, {
-              ...currentStatus,
-              path: { ...currentStatus.path, muted },
-            });
-          }
-
-          return { fslogixPaths, fslogixStatuses: newStatuses };
-        });
-
-        // Persist to settings.json via Tauri command
-        invoke('update_fslogix_path_muted', { pathId, muted }).catch((error) => {
-          console.error('[useAppStore] Failed to persist FSLogix muted state:', error);
-        });
-      },
     }),
     {
       name: STORAGE_KEY,
@@ -687,30 +512,32 @@ export const useAppStore = create<AppState>()(
       partialize: (state): PersistedState => ({
         config: state.config,
         customEndpoints: state.customEndpoints,
+        endpointOverrides: state.endpointOverrides,
         historyData: serializeHistory(state.endpointStatuses),
       }),
       merge: (persistedState, currentState) => {
-        const persisted = persistedState as PersistedState | undefined;
+        const persisted = persistedState as Partial<PersistedState> | undefined;
+        const customEndpoints = sanitizeCustomEndpoints(persisted?.customEndpoints);
+        const endpointOverrides = sanitizeOverrides(persisted?.endpointOverrides);
+        const endpoints = buildEndpoints(endpointOverrides, customEndpoints);
         return {
           ...currentState,
-          config: persisted?.config
-            ? { ...DEFAULT_CONFIG, ...persisted.config }
-            : currentState.config,
-          customEndpoints: persisted?.customEndpoints ?? [],
-          endpoints: currentState.endpoints,
-          endpointStatuses: persisted?.historyData
-            ? deserializeHistory(persisted.historyData, currentState.endpoints)
-            : currentState.endpointStatuses,
+          config: persisted?.config ? sanitizeConfig(persisted.config) : currentState.config,
+          customEndpoints,
+          endpointOverrides,
+          endpoints,
+          endpointStatuses: deserializeHistory(persisted?.historyData, endpoints),
         };
       },
-      version: 9,
+      version: 10,
       migrate: (persistedState, version) => {
-        const state = persistedState as PersistedState;
-        if (version < 9) {
-          // Migration to v9: Remove endpoint overrides (now stored in endpoint JSON files)
+        const state = persistedState as Partial<PersistedState>;
+        if (version < 10) {
+          // Migration to v10: browser-only app, endpoint overrides now live in localStorage
           return {
-            config: { ...DEFAULT_CONFIG, ...(state.config || {}) },
+            config: sanitizeConfig(state.config),
             customEndpoints: state.customEndpoints || [],
+            endpointOverrides: {},
             historyData: state.historyData || {},
           };
         }

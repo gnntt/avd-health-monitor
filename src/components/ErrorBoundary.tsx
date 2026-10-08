@@ -138,10 +138,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       case ErrorCode.CONNECTION_REFUSED:
       case ErrorCode.CONNECTION_RESET:
         return 'A network error occurred. Please check your connection and try again.';
-      case ErrorCode.TAURI_INVOKE_FAILED:
-      case ErrorCode.TRAY_ICON_UPDATE_FAILED:
-      case ErrorCode.NOTIFICATION_FAILED:
-        return 'A backend error occurred. The application may need to be restarted.';
       case ErrorCode.VALIDATION_ERROR:
       case ErrorCode.INVALID_ENDPOINT:
       case ErrorCode.INVALID_CONFIG:

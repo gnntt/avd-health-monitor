@@ -1,6 +1,5 @@
 import { useAppStore } from '../store/useAppStore';
 import { EndpointTile } from './EndpointTile';
-import { FSLogixSection } from './FSLogixSection';
 import { Info } from 'lucide-react';
 
 export function Dashboard() {
@@ -16,7 +15,7 @@ export function Dashboard() {
             No endpoints configured
           </p>
           <p className="text-gray-400 dark:text-gray-500 text-sm mt-2">
-            Loading endpoints for the selected mode...
+            Add a custom endpoint in Settings, or reset settings to restore the defaults
           </p>
         </div>
       </div>
@@ -33,20 +32,8 @@ export function Dashboard() {
     return acc;
   }, {} as Record<string, typeof endpoints>);
 
-  // Define category order for session host mode
-  const sessionHostCategoryOrder = [
-    'Core AVD Services',
-    'Agent & Updates',
-    'Monitoring',
-    'Windows Activation',
-    'Azure Infrastructure',
-    'Certificates',
-    'Optional Services',
-    'Other',
-  ];
-
-  // Define category order for end user mode
-  const endUserCategoryOrder = [
+  // Category display order
+  const categoryOrder = [
     'Authentication',
     'AVD Services',
     'Microsoft Services',
@@ -54,11 +41,9 @@ export function Dashboard() {
     'Troubleshooting',
     'Certificates',
     'Telemetry',
+    'Optional Services',
     'Other',
   ];
-
-  // Combine all categories for sorting
-  const categoryOrder = [...new Set([...sessionHostCategoryOrder, ...endUserCategoryOrder])];
 
   // Sort categories by predefined order
   const sortedCategories = Object.keys(groupedEndpoints).sort((a, b) => {
@@ -75,13 +60,13 @@ export function Dashboard() {
 
   return (
     <div className="pb-16 space-y-4">
-      {/* Mode Info Header */}
+      {/* Endpoint List Info Header */}
       {modeInfo && (
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3 flex items-start gap-3">
           <Info className="w-5 h-5 text-blue-500 dark:text-blue-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-              {modeInfo.name} Mode
+              {modeInfo.name}
             </h3>
             <p className="text-xs text-blue-600 dark:text-blue-300 mt-0.5">
               {modeInfo.description}
@@ -92,9 +77,6 @@ export function Dashboard() {
           </div>
         </div>
       )}
-
-      {/* FSLogix Storage Section */}
-      <FSLogixSection />
 
       {/* Endpoint Categories */}
       {sortedCategories.map((category) => {

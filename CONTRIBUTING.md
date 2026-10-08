@@ -53,9 +53,9 @@ feat: add custom endpoint configuration
 ```
 
 ```
-fix: resolve tray icon flickering on Windows 11
+fix: resolve favicon flickering during tests
 
-The tray icon was flickering when latency values changed rapidly.
+The tab icon was flickering when latency values changed rapidly.
 This fix implements debouncing to prevent excessive icon updates.
 
 Fixes #123
@@ -68,11 +68,11 @@ Reduced latency test time by 40% by running endpoint tests in parallel.
 ```
 
 ```
-deps: bump surge-ping from 0.8.0 to 0.8.1
+deps: bump recharts from 3.6.0 to 3.6.1
 ```
 
 ```
-docs: update installation instructions for Windows
+docs: update usage instructions
 ```
 
 ```
@@ -109,9 +109,8 @@ docs(api): update command documentation
 Common scopes:
 - `ui` - User interface changes
 - `latency` - Latency testing logic
-- `tray` - System tray functionality
+- `status` - Tab icon, title and notifications
 - `settings` - Settings management
-- `api` - Backend API/commands
 - `ci` - CI/CD workflows
 - `deps` - Dependencies
 
@@ -141,11 +140,11 @@ Releases are **fully automated** via Release Please:
 2. **Release Please** analyzes commits and creates/updates a Release PR
 3. The Release PR contains:
    - Updated `CHANGELOG.md`
-   - Version bumps in `package.json`, `Cargo.toml`, and `tauri.conf.json`
+   - Version bump in `package.json`
 4. **Merge the Release PR** to trigger the release workflow:
-   - Builds Windows binaries (MSI and portable EXE)
+   - Builds the single-file web page (`avd-health-monitor.html`)
    - Creates GitHub release with changelog
-   - Uploads release assets
+   - Uploads the page as a release asset
 5. **GitHub Release** is published automatically
 
 **You don't need to manually update versions or create releases!**
@@ -155,8 +154,6 @@ Releases are **fully automated** via Release Please:
 ### Prerequisites
 
 - **Node.js** 22+ and **pnpm** 10+
-- **Rust** (stable toolchain)
-- **Windows** (for building Windows binaries)
 
 ### Setup
 
@@ -170,8 +167,8 @@ pnpm dev
 # Run tests
 pnpm test:run
 
-# Build for production
-pnpm tauri build
+# Build the single-file page (dist/index.html)
+pnpm build
 ```
 
 ## Code Quality
@@ -179,23 +176,13 @@ pnpm tauri build
 ### Running Tests
 
 ```bash
-# Frontend tests
 pnpm test:run
-
-# Rust tests
-cd src-tauri
-cargo test
 ```
 
 ### Linting
 
 ```bash
-# TypeScript/React
-pnpm build  # TypeScript compiler checks
-
-# Rust
-cd src-tauri
-cargo clippy -- -D warnings
+pnpm exec tsc --noEmit
 ```
 
 ## Pull Request Guidelines

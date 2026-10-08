@@ -30,93 +30,65 @@ jobs:
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  # Build and upload binaries only when a release is created
-  build-and-upload:
-    name: Build and Upload Release
-    runs-on: windows-latest
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+  # Type check, test and build on every push and pull request
+  test:
+    name: Test and Build
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: '22'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
         with:
-          toolchain: stable
-          targets: x86_64-pc-windows-msvc
+          node-version: '22'
+          cache: pnpm
 
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: './src-tauri -> target'
-
-      - name: Install frontend dependencies
-        run: pnpm install
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Run tests
-        run: |
-          pnpm test:run
-          cd src-tauri
-          cargo test
+        run: pnpm test:run
 
-      - name: Build application
-        run: pnpm tauri build
+      - name: Build page
+        run: pnpm build
 
-      - name: Upload release assets
-        shell: bash
+  # Build and upload the single-file page only when a release is created
+  build-and-upload:
+    name: Build and Upload Release
+    runs-on: ubuntu-latest
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm test:run
+
+      - name: Build page
+        run: pnpm build
+
+      - name: Upload release asset
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${{ needs.release-please.outputs.tag_name }}"
-
-          echo "=== Uploading assets to release $VERSION ==="
-
-          # Find and upload MSI
-          MSI_FILE=$(find src-tauri/target/release/bundle/msi -name "*.msi" -type f 2>/dev/null | head -1)
-          if [ -n "$MSI_FILE" ]; then
-            echo "Uploading MSI: $MSI_FILE"
-            gh release upload "$VERSION" "$MSI_FILE" --clobber
-          else
-            echo "Warning: MSI file not found"
-          fi
-
-          # Create portable ZIP with EXE and resource files
-          EXE_FILE="src-tauri/target/release/avd-health-monitor.exe"
-          if [ -f "$EXE_FILE" ]; then
-            echo "Creating portable ZIP with EXE and resources..."
-            PORTABLE_DIR="avd-health-monitor-portable"
-            mkdir -p "$PORTABLE_DIR/resources"
-            cp "$EXE_FILE" "$PORTABLE_DIR/"
-            cp src-tauri/resources/*.json "$PORTABLE_DIR/resources/"
-
-            # Create ZIP archive
-            ZIP_FILE="avd-health-monitor-${VERSION}-portable.zip"
-            powershell -Command "Compress-Archive -Path '$PORTABLE_DIR/*' -DestinationPath '$ZIP_FILE' -Force"
-
-            echo "Uploading portable ZIP: $ZIP_FILE"
-            gh release upload "$VERSION" "$ZIP_FILE" --clobber
-
-            # Cleanup
-            rm -rf "$PORTABLE_DIR"
-          else
-            echo "Warning: Portable EXE not found"
-          fi
-
-          # Upload NSIS installer if available
-          NSIS_FILE=$(find src-tauri/target/release/bundle/nsis -name "*.exe" -type f 2>/dev/null | head -1)
-          if [ -n "$NSIS_FILE" ]; then
-            echo "Uploading NSIS: $NSIS_FILE"
-            gh release upload "$VERSION" "$NSIS_FILE" --clobber
-          fi
-
-          echo "=== Upload complete ==="
+          cp dist/index.html avd-health-monitor.html
+          gh release upload "${{ needs.release-please.outputs.tag_name }}" avd-health-monitor.html --clobber
