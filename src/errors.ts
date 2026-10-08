@@ -1,6 +1,6 @@
 /**
  * Custom error types for AVD Health Monitor application
- * Provides structured error handling for both frontend and backend operations
+ * Provides structured error handling for endpoint tests and app state
  */
 
 // Base error class for all application errors
@@ -27,11 +27,6 @@ export enum ErrorCode {
   DNS_RESOLUTION_FAILED = 'DNS_RESOLUTION_FAILED',
   CONNECTION_REFUSED = 'CONNECTION_REFUSED',
   CONNECTION_RESET = 'CONNECTION_RESET',
-
-  // Backend/Tauri errors
-  TAURI_INVOKE_FAILED = 'TAURI_INVOKE_FAILED',
-  TRAY_ICON_UPDATE_FAILED = 'TRAY_ICON_UPDATE_FAILED',
-  NOTIFICATION_FAILED = 'NOTIFICATION_FAILED',
 
   // Validation errors
   VALIDATION_ERROR = 'VALIDATION_ERROR',
@@ -74,18 +69,6 @@ export class ConnectionError extends NetworkError {
     super(message, code, endpoint);
     this.name = 'ConnectionError';
     Object.setPrototypeOf(this, ConnectionError.prototype);
-  }
-}
-
-// Tauri/Backend errors
-export class TauriError extends AppError {
-  readonly command?: string;
-
-  constructor(message: string, code: ErrorCode = ErrorCode.TAURI_INVOKE_FAILED, command?: string) {
-    super(message, code, true);
-    this.name = 'TauriError';
-    this.command = command;
-    Object.setPrototypeOf(this, TauriError.prototype);
   }
 }
 
@@ -140,12 +123,6 @@ export function getUserFriendlyErrorMessage(error: AppError): string {
       return 'Connection reset';
     case ErrorCode.NETWORK_ERROR:
       return 'Network error';
-    case ErrorCode.TAURI_INVOKE_FAILED:
-      return 'Backend error';
-    case ErrorCode.TRAY_ICON_UPDATE_FAILED:
-      return 'Tray update failed';
-    case ErrorCode.NOTIFICATION_FAILED:
-      return 'Notification failed';
     case ErrorCode.VALIDATION_ERROR:
     case ErrorCode.INVALID_ENDPOINT:
     case ErrorCode.INVALID_CONFIG:

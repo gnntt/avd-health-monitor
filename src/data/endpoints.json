@@ -12,11 +12,10 @@
           "name": "Azure AD Authentication",
           "url": "login.microsoftonline.com",
           "port": 443,
-          "protocol": "tcp",
+          "protocol": "https",
           "required": true,
           "purpose": "Authentication to Microsoft Online Services",
-          "latencyCritical": true,
-          "muted": false
+          "latencyCritical": true
         }
       ]
     },
@@ -29,55 +28,50 @@
           "name": "AVD RD Gateway",
           "url": "rdgateway.wvd.microsoft.com",
           "port": 443,
-          "protocol": "tcp",
+          "protocol": "https",
           "required": true,
           "purpose": "Service traffic including TCP based RDP connectivity",
-          "latencyCritical": true,
-          "muted": false
+          "latencyCritical": true
         },
         {
           "id": "eu-avd-rdweb",
           "name": "AVD RD Web",
           "url": "rdweb.wvd.microsoft.com",
           "port": 443,
-          "protocol": "tcp",
+          "protocol": "https",
           "required": true,
           "purpose": "Service traffic including TCP based RDP connectivity",
-          "latencyCritical": true,
-          "muted": false
+          "latencyCritical": true
         },
         {
           "id": "eu-avd-client",
           "name": "AVD Client",
           "url": "client.wvd.microsoft.com",
           "port": 443,
-          "protocol": "tcp",
+          "protocol": "https",
           "required": true,
           "purpose": "Service traffic including TCP based RDP connectivity",
-          "latencyCritical": true,
-          "muted": false
+          "latencyCritical": true
         },
         {
           "id": "eu-avd-rdbroker",
           "name": "AVD RD Broker",
           "url": "rdbroker.wvd.microsoft.com",
           "port": 443,
-          "protocol": "tcp",
+          "protocol": "https",
           "required": true,
           "purpose": "Service traffic including TCP based RDP connectivity",
-          "latencyCritical": true,
-          "muted": false
+          "latencyCritical": true
         },
         {
           "id": "eu-windows-cloud",
           "name": "Windows Cloud",
           "url": "windows.cloud.microsoft",
           "port": 443,
-          "protocol": "tcp",
+          "protocol": "https",
           "required": true,
           "purpose": "Connection center",
-          "latencyCritical": false,
-          "muted": false
+          "latencyCritical": false
         }
       ]
     },
@@ -90,22 +84,20 @@
           "name": "Microsoft Graph",
           "url": "graph.microsoft.com",
           "port": 443,
-          "protocol": "tcp",
+          "protocol": "https",
           "required": true,
           "purpose": "Service traffic",
-          "latencyCritical": false,
-          "muted": false
+          "latencyCritical": false
         },
         {
           "id": "eu-ecs-office",
           "name": "Office ECS",
           "url": "ecs.office.com",
           "port": 443,
-          "protocol": "tcp",
+          "protocol": "https",
           "required": true,
           "purpose": "Connection center",
-          "latencyCritical": false,
-          "muted": false
+          "latencyCritical": false
         }
       ]
     },
@@ -121,8 +113,7 @@
           "protocol": "http",
           "required": true,
           "purpose": "Certificates",
-          "latencyCritical": false,
-          "muted": false
+          "latencyCritical": false
         }
       ]
     },
@@ -135,11 +126,10 @@
           "name": "Windows 365",
           "url": "windows365.microsoft.com",
           "port": 443,
-          "protocol": "tcp",
+          "protocol": "https",
           "required": false,
           "purpose": "Windows 365 Cloud PC service",
-          "latencyCritical": false,
-          "muted": false
+          "latencyCritical": false
         }
       ]
     }

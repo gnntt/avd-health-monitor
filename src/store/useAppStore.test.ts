@@ -1,14 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useAppStore } from './useAppStore';
+import { useAppStore, DEFAULT_CONFIG, sanitizeConfig } from './useAppStore';
+import { BUILT_IN_ENDPOINTS } from '../data/builtInEndpoints';
 
 describe('useAppStore', () => {
   beforeEach(() => {
     // Reset store state before each test
+    useAppStore.getState().resetSettings();
     useAppStore.setState({
       endpointStatuses: new Map(),
       isMonitoring: false,
       isPaused: false,
-      customEndpoints: [],
+      pendingTestTrigger: false,
     });
   });
 
@@ -18,16 +20,17 @@ describe('useAppStore', () => {
     expect(state.config.thresholds.excellent).toBe(30);
     expect(state.config.thresholds.good).toBe(80);
     expect(state.config.thresholds.warning).toBe(150);
-    expect(state.config.mode).toBe('sessionhost');
+    expect(state.config.notificationsEnabled).toBe(false);
   });
 
-  it('should have default endpoints', () => {
+  it('should load the built-in end user endpoints', () => {
     const state = useAppStore.getState();
-    // Fallback has at least 1 endpoint (real defaults come from settings.json)
-    expect(state.endpoints.length).toBeGreaterThanOrEqual(1);
-    // First fallback endpoint is Azure AD Authentication
+    expect(state.endpoints.length).toBe(BUILT_IN_ENDPOINTS.length);
     expect(state.endpoints[0].name).toBe('Azure AD Authentication');
     expect(state.endpoints[0].url).toBe('login.microsoftonline.com');
+    expect(state.endpoints[0].category).toBe('Authentication');
+    expect(state.endpoints.every((e) => e.protocol === 'https' || e.protocol === 'http')).toBe(true);
+    expect(state.modeInfo.name).toBe('End User Device');
   });
 
   it('should update config', () => {
@@ -44,7 +47,7 @@ describe('useAppStore', () => {
       name: 'Test Endpoint',
       url: 'test.example.com',
       port: 443,
-      protocol: 'tcp' as const,
+      protocol: 'https' as const,
       category: 'Custom',
       enabled: true,
     };
@@ -83,7 +86,7 @@ describe('useAppStore', () => {
       name: 'To Remove',
       url: 'remove.example.com',
       port: 443,
-      protocol: 'tcp' as const,
+      protocol: 'https' as const,
       category: 'Custom',
       enabled: true,
     });
@@ -133,5 +136,66 @@ describe('useAppStore', () => {
 
     setPaused(false);
     expect(useAppStore.getState().isPaused).toBe(false);
+  });
+
+  it('should store built-in endpoint changes as overrides', () => {
+    const { updateEndpointMuted, updateBuiltInEndpoint, updateEndpointEnabled } = useAppStore.getState();
+    updateEndpointEnabled('eu-avd-rdweb', false);
+    updateEndpointMuted('eu-avd-rdweb', true);
+    updateBuiltInEndpoint('eu-avd-rdweb', { name: 'RD Web' });
+
+    const state = useAppStore.getState();
+    expect(state.endpointOverrides['eu-avd-rdweb']).toEqual({ enabled: false, muted: true, name: 'RD Web' });
+    const endpoint = state.endpoints.find((e) => e.id === 'eu-avd-rdweb');
+    expect(endpoint).toMatchObject({ enabled: false, muted: true, name: 'RD Web', url: 'rdweb.wvd.microsoft.com' });
+  });
+
+  it('should export and re-import settings', () => {
+    const { setConfig, addCustomEndpoint, updateEndpointMuted } = useAppStore.getState();
+    setConfig({ testInterval: 60, theme: 'nord' });
+    addCustomEndpoint({ name: 'Mine', url: 'mine.example.com', port: 443, protocol: 'https', enabled: true });
+    updateEndpointMuted('eu-graph-api', true);
+
+    const exported = JSON.parse(JSON.stringify(useAppStore.getState().exportSettings()));
+    useAppStore.getState().resetSettings();
+    expect(useAppStore.getState().customEndpoints.length).toBe(0);
+
+    useAppStore.setState({ pendingTestTrigger: false });
+    useAppStore.getState().importSettings(exported);
+
+    const state = useAppStore.getState();
+    expect(state.config.testInterval).toBe(60);
+    expect(state.config.theme).toBe('nord');
+    expect(state.customEndpoints[0].name).toBe('Mine');
+    expect(state.endpoints.find((e) => e.name === 'Mine')).toBeDefined();
+    expect(state.endpoints.find((e) => e.id === 'eu-graph-api')?.muted).toBe(true);
+    expect(state.pendingTestTrigger).toBe(true);
+  });
+
+  it('should import a desktop app settings.json', () => {
+    useAppStore.getState().importSettings({
+      version: 1,
+      config: { mode: 'enduser', testInterval: 180, autoStart: true, theme: 'dark' },
+      customEndpoints: [
+        { id: 'custom-1', name: 'Old', url: 'old.example.com', port: 443, protocol: 'tcp', enabled: true },
+      ],
+    });
+
+    const state = useAppStore.getState();
+    expect(state.config).toEqual({ ...DEFAULT_CONFIG, testInterval: 180, theme: 'dark' });
+    expect(state.customEndpoints[0]).toMatchObject({ id: 'custom-1', protocol: 'https', port: 443 });
+  });
+
+  it('should reject files that are not settings', () => {
+    expect(() => useAppStore.getState().importSettings({ hello: 'world' })).toThrow();
+    expect(() => useAppStore.getState().importSettings(null)).toThrow();
+  });
+
+  it('should clamp invalid config values', () => {
+    const config = sanitizeConfig({ testInterval: 1, alertThreshold: 99, theme: 'neon', thresholds: { good: 'x' } });
+    expect(config.testInterval).toBe(5);
+    expect(config.alertThreshold).toBe(10);
+    expect(config.theme).toBe('system');
+    expect(config.thresholds.good).toBe(DEFAULT_CONFIG.thresholds.good);
   });
 });
