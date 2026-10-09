@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/claude-code) when working 
 
 ## Project Overview
 
-AVD Health Monitor is a browser-only web page that monitors, in real time, whether an Azure Virtual Desktop (AVD) client device can reach the endpoints it needs. The build is a single self-contained `index.html` that users open by double-clicking (`file://`) or from any web server. There is no backend.
+AVD Health Monitor is a browser-only web page that monitors, in real time, whether an Azure Virtual Desktop (AVD) client device can reach the endpoints it needs. The build is a single self-contained `index.html` that users open by double-clicking (`file://`), from GitHub Pages, or from any web server. There is no backend.
 
 ## Tech Stack
 
@@ -82,4 +82,5 @@ Zustand store in `src/store/useAppStore.ts` manages:
 ## CI/CD
 
 - `.github/workflows/ci.yml` - Tests and builds on push/PR; on release, uploads `avd-health-monitor.html`
+- `.github/workflows/pages.yml` - Publishes `dist/` to GitHub Pages (https://gnntt.github.io/avd-health-monitor/) on push to main
 - Release Please for automated versioning (`.release-please-config.json`)

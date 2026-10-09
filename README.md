@@ -1,6 +1,6 @@
 # AVD Health Monitor
 
-A single web page that monitors, in real time, whether a client device can reach the Azure Virtual Desktop (AVD) endpoints it needs. Nothing to install: download one HTML file, double-click it, and it opens in your browser.
+A single web page that monitors, in real time, whether a client device can reach the Azure Virtual Desktop (AVD) endpoints it needs. Nothing to install: open **https://gnntt.github.io/avd-health-monitor/** in your browser, or download the HTML file and double-click it.
 
 [![CI](https://github.com/gnntt/avd-health-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/gnntt/avd-health-monitor/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -32,11 +32,16 @@ A single web page that monitors, in real time, whether a client device can reach
 
 ## Usage
 
+**Open it online:** go to **https://gnntt.github.io/avd-health-monitor/**. Testing starts right away; keep the tab open to keep monitoring.
+
+**Or use a local copy:**
+
 1. Download **[avd-health-monitor.html](https://github.com/gnntt/avd-health-monitor/releases/latest/download/avd-health-monitor.html)** (always the latest release), or build it yourself with `pnpm build` (see [Development](#development))
 2. Double-click it. It opens in your default browser and starts testing right away.
-3. Keep the tab open to keep monitoring.
 
-The page is built for current versions of Edge and Chrome (tested in Chromium); other modern browsers should work too. You can also put the file on any web server or file share and send users the link.
+The page is built for current versions of Edge and Chrome (tested in Chromium); other modern browsers should work too. You can also put the file on your own web server or file share and send users the link.
+
+The online page and a local copy keep separate settings, so use **Export** / **Import** to move them between the two.
 
 ### Status colors
 
@@ -77,7 +82,7 @@ This measures the network path the browser actually uses, including any proxy, w
 - **HTTP(S) only.** Endpoints that don't speak HTTP(S), such as raw TCP or SMB ports, can't be tested from a browser.
 - **No error details.** Browsers hide why a request failed and which status code came back, so failures are reported as "Network error" or "Connection timed out".
 - **Background tabs.** Browsers slow down timers in tabs that have been hidden for a while, so tests may run only about once a minute until you switch back.
-- **Notifications** need the browser's permission. Whether a browser grants it to a page opened directly from a file differs between browsers and their policies; if it refuses, serve the page from a web server. The tab icon and title work either way.
+- **Notifications** need the browser's permission. Whether a browser grants it to a page opened directly from a file differs between browsers and their policies; if it refuses, use the online page instead. The tab icon and title work either way.
 - **No session host monitoring.** Session host mode, FSLogix storage checks, auto-start and log files needed the desktop app and were removed.
 
 ---
@@ -138,7 +143,9 @@ avd-health-monitor/
 │   ├── store/
 │   │   └── useAppStore.ts         # Global state (Zustand)
 │   └── types.ts                   # TypeScript definitions
-└── .github/workflows/ci.yml       # Test, build, release
+└── .github/workflows/
+    ├── ci.yml                     # Test, build, release
+    └── pages.yml                  # Publish to GitHub Pages
 ```
 
 ---
@@ -178,7 +185,7 @@ pnpm exec tsc --noEmit
 
 ### Notifications don't appear
 - Turn on **Notifications** in Settings and allow them when the browser asks
-- If the browser refuses (the page shows a message), allow notifications in the site settings, or serve the page from a web server
+- If the browser refuses (the page shows a message), allow notifications in the site settings, or use the online page instead of a local file
 - Check that the operating system allows notifications from the browser
 
 ### Settings disappeared
