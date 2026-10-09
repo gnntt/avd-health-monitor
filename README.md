@@ -32,7 +32,7 @@ A single web page that monitors, in real time, whether a client device can reach
 
 ## Usage
 
-1. Download `avd-health-monitor.html` from [Releases](https://github.com/gnntt/avd-health-monitor/releases) (the first browser-version release will include it), or build it yourself with `pnpm build` (see [Development](#development))
+1. Download **[avd-health-monitor.html](https://github.com/gnntt/avd-health-monitor/releases/latest/download/avd-health-monitor.html)** (always the latest release), or build it yourself with `pnpm build` (see [Development](#development))
 2. Double-click it. It opens in your default browser and starts testing right away.
 3. Keep the tab open to keep monitoring.
 
