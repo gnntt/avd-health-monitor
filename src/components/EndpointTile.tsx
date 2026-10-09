@@ -1,6 +1,6 @@
 import { Check, AlertTriangle, XCircle, Loader2, WifiOff, Power, CheckCircle, BellOff, Bell } from 'lucide-react';
 import type { Endpoint, EndpointStatus } from '../types';
-import { cn, getStatusColor, getStatusBgColor, isLatencyCritical } from '../lib/utils';
+import { cn, getStatusColor, getStatusBgColor, isLatencyCritical, historyInRange, downsampleHistory } from '../lib/utils';
 import { useAppStore } from '../store/useAppStore';
 import { useMemo, useState, useCallback } from 'react';
 
@@ -30,15 +30,18 @@ function getLatencyColor(status: string): string {
   }
 }
 
+// Points drawn in a tile's graph; longer ranges are averaged down to this
+const MAX_GRAPH_POINTS = 60;
+
 // Mini sparkline graph component - simple line only
-function MiniGraph({ history, isEnabled, latencyStatus }: { history: Array<{ timestamp: number; latency: number }>; isEnabled: boolean; latencyStatus: string }) {
+function MiniGraph({ history, graphTimeRange, isEnabled, latencyStatus }: { history: Array<{ timestamp: number; latency: number }>; graphTimeRange: number; isEnabled: boolean; latencyStatus: string }) {
   const [hoveredPoint, setHoveredPoint] = useState<{ x: number; y: number; latency: number; timestamp: number } | null>(null);
 
   const graphData = useMemo(() => {
-    if (history.length < 2) return null;
+    // Samples from the configured time range, averaged down to fit the tile
+    const points = downsampleHistory(historyInRange(history, graphTimeRange), MAX_GRAPH_POINTS);
+    if (points.length < 2) return null;
 
-    // Take last 20 data points
-    const points = history.slice(-20);
     const latencies = points.map(p => p.latency);
     const min = Math.min(...latencies);
     const max = Math.max(...latencies);
@@ -62,7 +65,7 @@ function MiniGraph({ history, isEnabled, latencyStatus }: { history: Array<{ tim
     ).join(' ');
 
     return { linePath, points: pointPositions, height };
-  }, [history]);
+  }, [history, graphTimeRange]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     if (!graphData) return;
@@ -152,6 +155,7 @@ function MiniGraph({ history, isEnabled, latencyStatus }: { history: Array<{ tim
 export function EndpointTile({ endpoint, status }: EndpointTileProps) {
   const updateEndpointEnabled = useAppStore((state) => state.updateEndpointEnabled);
   const updateEndpointMuted = useAppStore((state) => state.updateEndpointMuted);
+  const graphTimeRange = useAppStore((state) => state.config.graphTimeRange);
 
   const latency = status?.currentLatency ?? null;
   const latencyStatus = status?.status ?? 'unknown';
@@ -313,7 +317,7 @@ export function EndpointTile({ endpoint, status }: EndpointTileProps) {
       {/* Mini Graph - only show for latency-critical endpoints */}
       {showLatency && (
         <div className="mb-2">
-          <MiniGraph history={history} isEnabled={isEnabled} latencyStatus={latencyStatus} />
+          <MiniGraph history={history} graphTimeRange={graphTimeRange} isEnabled={isEnabled} latencyStatus={latencyStatus} />
         </div>
       )}
 

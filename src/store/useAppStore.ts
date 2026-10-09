@@ -11,7 +11,7 @@ import type {
   EndpointOverride,
   SettingsFile,
 } from '../types';
-import { getLatencyStatus } from '../lib/utils';
+import { getLatencyStatus, trimHistory } from '../lib/utils';
 import { parseBackendError, getUserFriendlyErrorMessage } from '../errors';
 import { MODE_INFO, buildEndpoints, customToEndpoint } from '../data/builtInEndpoints';
 
@@ -154,9 +154,6 @@ interface AppState {
 // Storage key for localStorage
 const STORAGE_KEY = 'avd-health-monitor-state';
 
-// How long to keep history data (24 hours in milliseconds)
-const HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000;
-
 // Serializable history entry for localStorage
 interface SerializedHistory {
   [endpointId: string]: {
@@ -173,20 +170,12 @@ interface PersistedState {
   historyData?: SerializedHistory;
 }
 
-// Helper to clean up history data older than 24 hours
-const cleanupOldHistory = (
-  history: Array<{ timestamp: number; latency: number }>
-): Array<{ timestamp: number; latency: number }> => {
-  const cutoff = Date.now() - HISTORY_RETENTION_MS;
-  return history.filter((h) => h.timestamp > cutoff);
-};
-
 // Helper to serialize endpointStatuses Map to a plain object for localStorage
 const serializeHistory = (statuses: Map<string, EndpointStatus>): SerializedHistory => {
   const result: SerializedHistory = {};
   statuses.forEach((status, endpointId) => {
     result[endpointId] = {
-      history: cleanupOldHistory(status.history),
+      history: trimHistory(status.history),
       lastUpdated: status.lastUpdated,
     };
   });
@@ -204,7 +193,7 @@ const deserializeHistory = (
   endpoints.forEach((endpoint) => {
     const saved = historyData[endpoint.id];
     if (saved && saved.history.length > 0) {
-      const cleanedHistory = cleanupOldHistory(saved.history);
+      const cleanedHistory = trimHistory(saved.history);
       if (cleanedHistory.length > 0) {
         statuses.set(endpoint.id, {
           endpoint,
@@ -393,10 +382,7 @@ export const useAppStore = create<AppState>()(
           const timestamp = Date.now();
 
           const newHistory = success
-            ? [
-                ...(currentStatus?.history || []).slice(-100),
-                { timestamp, latency },
-              ]
+            ? trimHistory([...(currentStatus?.history || []), { timestamp, latency }], timestamp)
             : currentStatus?.history || [];
 
           let endpointError: EndpointError | null = null;
