@@ -2,7 +2,7 @@
 
 A single web page that monitors, in real time, whether a client device can reach the Azure Virtual Desktop (AVD) endpoints it needs. Nothing to install: download one HTML file, double-click it, and it opens in your browser.
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/seb07-cloud/avd-health-monitor/actions)
+[![CI](https://github.com/gnntt/avd-health-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/gnntt/avd-health-monitor/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ---
@@ -21,7 +21,7 @@ A single web page that monitors, in real time, whether a client device can reach
 - **Real-time latency monitoring** - configurable test interval (5-300 seconds)
 - **Custom endpoints** - add your own hosts or URLs next to the defaults
 - **Enable, disable or mute endpoints** - stop testing an endpoint, or keep testing it without alerts
-- **Live graphs** - per-endpoint sparklines with a configurable time range (1-24 hours)
+- **Live graphs** - per-endpoint sparklines covering a configurable time range (1-24 hours)
 - **Status in the browser tab** - the tab icon changes color and the tab title shows the average latency
 - **Browser notifications** - alert after N consecutive slow checks, with a cooldown between alerts
 - **Themes** - Light, Dark, Nord, Cyberpunk, or follow the system
@@ -32,7 +32,7 @@ A single web page that monitors, in real time, whether a client device can reach
 
 ## Usage
 
-1. Download `avd-health-monitor.html` from [Releases](https://github.com/seb07-cloud/avd-health-monitor/releases)
+1. Download `avd-health-monitor.html` from [Releases](https://github.com/gnntt/avd-health-monitor/releases) (the first browser-version release will include it), or build it yourself with `pnpm build` (see [Development](#development))
 2. Double-click it. It opens in your default browser and starts testing right away.
 3. Keep the tab open to keep monitoring.
 
@@ -53,7 +53,7 @@ Endpoints that aren't latency-critical only show **Reachable** or **Unreachable*
 
 1. Open **Settings** (gear icon)
 2. Under **Custom Endpoints**, enter a **Name** and a hostname (`mygateway.example.com`) or a full URL (`https://example.com/health`)
-3. Choose **HTTPS** or **HTTP** and the port
+3. For a hostname, choose **HTTPS** or **HTTP** and the port. A full URL already includes them, so these fields are ignored.
 4. Click **Test** to check it, then **Add**
 
 ### Sharing a configuration
@@ -77,7 +77,7 @@ This measures the network path the browser actually uses, including any proxy, w
 - **HTTP(S) only.** Endpoints that don't speak HTTP(S), such as raw TCP or SMB ports, can't be tested from a browser.
 - **No error details.** Browsers hide why a request failed and which status code came back, so failures are reported as "Network error" or "Connection timed out".
 - **Background tabs.** Browsers slow down timers in tabs that have been hidden for a while, so tests may run only about once a minute until you switch back.
-- **Notifications** need the browser's permission. Some browsers refuse it for pages opened directly from a file; serve the page from a web server if you need notifications. The tab icon and title work either way.
+- **Notifications** need the browser's permission. Whether a browser grants it to a page opened directly from a file differs between browsers and their policies; if it refuses, serve the page from a web server. The tab icon and title work either way.
 - **No session host monitoring.** Session host mode, FSLogix storage checks, auto-start and log files needed the desktop app and were removed.
 
 ---
@@ -91,7 +91,7 @@ This measures the network path the browser actually uses, including any proxy, w
 | Notifications | Off | Browser notifications (asks for permission when turned on) |
 | Alert Threshold | 3 checks | Consecutive slow checks before an alert |
 | Alert Cooldown | 5 minutes | Minimum time between alerts |
-| Graph Time Range | 1 hour | History shown in graphs |
+| Graph Time Range | 1 hour | History shown in graphs (1-24 hours). History is kept for 24 hours; older samples are thinned out to fit browser storage. |
 
 ### Built-in endpoints
 
@@ -148,7 +148,7 @@ avd-health-monitor/
 Requires **Node.js** 22+ and **pnpm** 10+.
 
 ```bash
-git clone https://github.com/seb07-cloud/avd-health-monitor.git
+git clone https://github.com/gnntt/avd-health-monitor.git
 cd avd-health-monitor
 pnpm install
 
@@ -178,7 +178,7 @@ pnpm exec tsc --noEmit
 
 ### Notifications don't appear
 - Turn on **Notifications** in Settings and allow them when the browser asks
-- If the browser refuses for a local file, serve the page from a web server
+- If the browser refuses (the page shows a message), allow notifications in the site settings, or serve the page from a web server
 - Check that the operating system allows notifications from the browser
 
 ### Settings disappeared
@@ -210,6 +210,6 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 
 **Made for the AVD Community**
 
-[Report Bug](https://github.com/seb07-cloud/avd-health-monitor/issues) | [Request Feature](https://github.com/seb07-cloud/avd-health-monitor/issues)
+[Report Bug](https://github.com/gnntt/avd-health-monitor/issues) | [Request Feature](https://github.com/gnntt/avd-health-monitor/issues)
 
 </div>

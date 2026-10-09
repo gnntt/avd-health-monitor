@@ -118,6 +118,13 @@ describe('useAppStore', () => {
     expect(status?.history.length).toBe(1);
   });
 
+  it('should keep more than 100 history samples', () => {
+    const { updateLatency } = useAppStore.getState();
+    for (let i = 0; i < 150; i++) updateLatency('eu-azure-login', 20, true);
+
+    expect(useAppStore.getState().endpointStatuses.get('eu-azure-login')?.history.length).toBe(150);
+  });
+
   it('should toggle monitoring state', () => {
     const { setMonitoring } = useAppStore.getState();
 

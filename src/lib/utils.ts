@@ -160,3 +160,48 @@ export function formatTimestamp(timestamp: number): string {
 export function isLatencyCritical(endpoint: Endpoint): boolean {
   return endpoint.latencyCritical !== false;
 }
+
+export type HistoryPoint = { timestamp: number; latency: number };
+
+// Longest graph time range users can pick, and so how long history is kept
+export const HISTORY_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+// Per-endpoint sample cap so 24h of history fits in localStorage
+export const MAX_HISTORY_SAMPLES = 1500;
+
+/**
+ * Drop samples older than the retention period. Above the sample cap, every
+ * other sample in the older half is dropped, so the full time range stays
+ * covered and only older data loses resolution.
+ */
+export function trimHistory(history: HistoryPoint[], now: number = Date.now()): HistoryPoint[] {
+  const cutoff = now - HISTORY_RETENTION_MS;
+  const recent = history.filter((p) => p.timestamp > cutoff);
+  if (recent.length <= MAX_HISTORY_SAMPLES) return recent;
+
+  const half = Math.floor(recent.length / 2);
+  return [...recent.slice(0, half).filter((_, i) => i % 2 === 0), ...recent.slice(half)];
+}
+
+/** Samples from the last `hours` hours. */
+export function historyInRange(history: HistoryPoint[], hours: number, now: number = Date.now()): HistoryPoint[] {
+  const cutoff = now - hours * 60 * 60 * 1000;
+  return history.filter((p) => p.timestamp > cutoff);
+}
+
+/** Average consecutive samples into at most `maxPoints` points for drawing. */
+export function downsampleHistory(history: HistoryPoint[], maxPoints: number): HistoryPoint[] {
+  if (history.length <= maxPoints) return history;
+
+  const result: HistoryPoint[] = [];
+  const bucketSize = history.length / maxPoints;
+  for (let i = 0; i < maxPoints; i++) {
+    const bucket = history.slice(Math.floor(i * bucketSize), Math.floor((i + 1) * bucketSize));
+    if (bucket.length === 0) continue;
+    result.push({
+      timestamp: bucket[bucket.length - 1].timestamp,
+      latency: bucket.reduce((sum, p) => sum + p.latency, 0) / bucket.length,
+    });
+  }
+  return result;
+}
